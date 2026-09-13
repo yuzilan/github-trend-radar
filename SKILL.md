@@ -20,6 +20,9 @@ Produce a current, evidence-based GitHub discovery report while keeping objectiv
 - If only the derived repository metadata cache is invalid, explain that it
   contains public data and rebuild it with `fetch_trending.py --refresh-metadata`;
   do not treat it as user preference loss.
+- Use `doctor.py` for read-only diagnosis before proposing a repair. Use
+  `maintenance.py prune` only for derived snapshots and metadata; preview first
+  and never delete `profile.json` or `feedback.jsonl` through maintenance.
 
 ## Choose the mode
 
@@ -48,7 +51,7 @@ Produce a current, evidence-based GitHub discovery report while keeping objectiv
 6. If an excluded repository appears in the objective list, retain its one-line objective position for factual integrity, mark it `已排除`, and do not give it a recommendation card.
 7. Mark repeat appearances and meaningful movement when snapshot history supports them. Never invent a trend from a single snapshot.
 
-Read [references/ranking-and-feedback.md](references/ranking-and-feedback.md) when interpreting scores, updating preferences, or explaining the ranking.
+Read [references/ranking-and-feedback.md](references/ranking-and-feedback.md) when interpreting scores, updating preferences, or explaining the ranking. Check [references/report-quality.md](references/report-quality.md) before delivering the report.
 
 ### Repository deep dive
 
@@ -59,6 +62,8 @@ When the user asks about an entry, inspect the repository rather than expanding 
 - your own inference.
 
 Do not run unfamiliar repository code, install its dependencies, or execute setup scripts without an explicit request.
+
+Check [references/report-quality.md](references/report-quality.md) before delivering a deep dive.
 
 After answering, record one `detail` event for that repository. Infer at most three narrow topic labels from verified metadata. Do not treat a single question as a strong permanent preference.
 
@@ -77,6 +82,13 @@ Record feedback promptly and tell the user exactly what scope was recorded.
   `reset-profile` with `--confirm-reset`.
 - Requests to back up or inspect portable state → `profile.py export --output <path>`;
   never overwrite an existing export unless the user explicitly approves it.
+- Requests to import portable state → preview with `profile.py import --input
+  <path> --dry-run`; merge by default. Require explicit confirmation before
+  replace mode and pass `--confirm-replace` only after that confirmation.
+- Requests to remove the audit trail but retain current preferences → require
+  explicit confirmation immediately before `profile.py purge-history
+  --confirm-purge`. Explain that this deletion is not recoverable through the
+  Skill.
 
 Use:
 

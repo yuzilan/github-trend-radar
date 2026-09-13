@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from state import StateError, atomic_write_json, load_json, resolve_data_dir
+from topics import normalize_topics
 
 
 REQUIRED_ITEM_FIELDS = {
@@ -52,11 +53,13 @@ def validate_items(items: list[dict], period: str) -> None:
 
 
 def search_blob(item: dict) -> str:
+    raw_topics = [str(topic) for topic in (item.get("topics") or [])]
+    canonical_topics = normalize_topics(raw_topics)[0]
     parts = [
         item.get("full_name", ""),
         item.get("description", ""),
         item.get("language", ""),
-        " ".join(item.get("topics") or []),
+        " ".join(raw_topics + canonical_topics),
     ]
     return " ".join(str(part).lower() for part in parts if part)
 

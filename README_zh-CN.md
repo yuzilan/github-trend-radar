@@ -11,7 +11,20 @@
 
 它不会定时骚扰你，不会自动 star、fork、安装或运行热门仓库，也不会把“你没点开”擅自理解成“不喜欢”。
 
-当前版本：`0.5.0`。源码位于 [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar)，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：`0.6.0`。源码位于 [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar)，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 目录
+
+- [功能一览](#功能一览)
+- [推荐安装方式](#推荐安装方式)
+- [三分钟上手](#三分钟上手)
+- [如何教它了解你](#如何教它了解你)
+- [排名是怎样算的](#排名是怎样算的)
+- [数据、缓存与隐私](#数据缓存与隐私)
+- [高级用法：直接运行脚本](#高级用法直接运行脚本)
+- [更新与卸载](#更新与卸载)
+- [常见问题](#常见问题)
+- [开发与验证](#开发与验证)
 
 ## 功能一览
 
@@ -26,9 +39,10 @@
 | 偏好学习 | 区分“问过”“明确喜欢”“实际试用”等不同强度 |
 | 排除与恢复 | 精确排除一个仓库或明确主题，也可以随时恢复 |
 | 忘记与重置 | 删除当前偏好；完整重置前必须再次确认 |
-| 画像查看与导出 | 查看已学到的内容，并导出画像和反馈记录 |
+| 画像查看、导入与导出 | 查看已学到的内容，并安全迁移画像和反馈记录 |
 | 本地缓存 | 缓存公开仓库元数据，减少重复 API 请求 |
 | 历史比较 | 有可比较快照时标注重复出现和有依据的变化 |
+| 诊断与空间清理 | 只读检查环境；预览并清理可重建的过期数据 |
 
 ## 推荐安装方式
 
@@ -92,7 +106,7 @@ $github-trend-radar 运行 GitHub 今日日榜，给我客观 Top 10 和个人�
 查看 Rust 项目的今日日榜前 5 名。
 ```
 
-语言名称会用于 GitHub Trending 的语言路径。若 GitHub 不识别该语言或返回的页面不完整，Skill 会明确报错，不会偷偷换成其他榜单。
+语言名称会规范成 GitHub Trending 的语言路径并安全进行 URL 编码，因此 `C#`、`Visual Basic` 等名称不会破坏周期参数。若 GitHub 不识别该语言或返回的页面不完整，Skill 会明确报错，不会偷偷换成其他榜单。
 
 ### 自定义数量
 
@@ -253,6 +267,7 @@ $github-trend-radar 运行 GitHub 今日日榜，给我客观 Top 10 和个人�
 | `profile.json` | 当前生效的权重和排除项 | 用户数据，不应随意删除 |
 | `profile.json.bak` | 上一次画像备份 | 用于修复 |
 | `feedback.jsonl` | 追加式完整反馈事件 | 用户审计数据 |
+| `feedback.jsonl.bak` | 导入覆盖前的上一份反馈备份 | 仅临时恢复用途 |
 | `repository-metadata.json` | topics、许可证、维护状态等公开元数据 | 可以重建 |
 | `snapshots/*.json` | 每次经过校验的热榜快照 | 可以重新积累 |
 | `latest-daily-ranking.json` | 最近一次日榜排序 | 可以重建 |
@@ -272,6 +287,14 @@ $github-trend-radar 运行 GitHub 今日日榜，给我客观 Top 10 和个人�
 - `--refresh-metadata` 可以强制重建缓存。
 
 缓存只包含公开信息，损坏或版本不兼容时可以安全重建，不会修改用户偏好。
+
+### 主题别名
+
+主题会使用保守、可查看的小型别名表规范化。例如 `ai-agents` 会归到 `ai-agent`，`devtools` 会归到 `developer-tools`，`llms` 会归到 `llm`。发生转换时，反馈事件会保留 `topic_aliases` 供审计。它不会依靠模糊模型猜测擅自把不同类别合并。
+
+### 保存期限与清理边界
+
+`maintenance.py prune` 只处理可重建的历史快照和公开元数据缓存，默认只是预览。只有加入 `--apply` 才会实际删除，且该命令永远不会删除 `profile.json` 或 `feedback.jsonl`。默认保留 180 天快照、90 天元数据；这只是手工清理工具，不会在后台自动运行。
 
 ### GitHub Token
 
@@ -442,13 +465,90 @@ python3 <skill-dir>/scripts/profile.py export \
   --force
 ```
 
-### 9. 从备份修复画像
+### 9. 导入画像和反馈
+
+先预览合并结果，不写入任何文件：
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json \
+  --dry-run
+```
+
+确认后执行默认合并：
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json
+```
+
+合并会对权重取两边较大值、合并排除项和备注，并按完整事件内容去重，所以重复导入同一份文件不会反复增加兴趣。若确实要完全替换当前画像和历史，必须显式确认：
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json \
+  --mode replace \
+  --confirm-replace
+```
+
+替换导入会为原画像和反馈各保留一份 `.bak`。导入文件中的文本只被视为数据，不会作为 Agent 指令执行。
+
+### 10. 删除反馈历史但保留当前画像
+
+没有确认参数时命令会拒绝执行。确认后：
+
+```bash
+python3 <skill-dir>/scripts/profile.py purge-history --confirm-purge
+```
+
+这会清空 `feedback.jsonl` 并删除它的旧备份，但不会改变 `profile.json` 中当前生效的权重和排除项。Skill 不提供恢复这段历史的命令；如需保留，请先导出。
+
+### 11. 运行只读诊断
+
+```bash
+python3 <skill-dir>/scripts/doctor.py
+```
+
+它会检查 Python 版本、数据目录、画像、备份、反馈日志、元数据缓存、GitHub Trending 页面解析和 API 限额。不会修改数据，也不会显示 Token。没有网络时可用：
+
+```bash
+python3 <skill-dir>/scripts/doctor.py --offline
+```
+
+机器处理可增加 `--json`。
+
+### 12. 查看占用并清理可重建数据
+
+```bash
+python3 <skill-dir>/scripts/maintenance.py status
+python3 <skill-dir>/scripts/maintenance.py prune
+```
+
+第二条只预览待清理项目。核对路径和列表后再实际执行：
+
+```bash
+python3 <skill-dir>/scripts/maintenance.py prune \
+  --snapshot-days 180 \
+  --metadata-days 90 \
+  --apply
+```
+
+无法读取日期的快照会被跳过而不是冒险删除。
+
+### 13. 从备份修复画像
 
 ```bash
 python3 <skill-dir>/scripts/profile.py repair
 ```
 
 该命令会用 `profile.json.bak` 替换当前画像。请先检查错误信息与备份内容，不要把它当作普通重试命令，也不要静默执行。
+
+### 14. 查看真实格式示例
+
+- [历史日榜报告节选](examples/sample-daily-report.md)
+- [对应热榜快照](examples/sample-snapshot.json)
+- [脱敏示例画像](examples/sample-profile.json)
+- [报告质量检查表](references/report-quality.md)
 
 </details>
 
@@ -479,6 +579,8 @@ npx skills remove github-trend-radar --global --yes
 ### GitHub Trending 抓取失败
 
 GitHub 没有正式 Trending API，本项目读取公开 Trending 网页。网页结构变化、网络失败或返回内容不完整时，脚本会明确失败，不会拿残缺数据生成榜单，也不会偷偷换成“最近新建仓库”。
+
+先运行 `python3 <skill-dir>/scripts/doctor.py`，可以区分本地状态问题、Trending 页面解析问题与 GitHub API 限额问题。
 
 ### GitHub API 限额不足
 
@@ -513,9 +615,9 @@ GitHub 没有正式 Trending API，本项目读取公开 Trending 网页。网�
 ```bash
 python3 -m unittest discover -s tests -v
 ruff check scripts tests
-python3 scripts/release_check.py --strict --tag v0.5.0
+python3 scripts/release_check.py --strict --tag v0.6.0
 ```
 
-自动测试覆盖 HTML 解析失败保护、缓存命中、日榜周榜交错补充、权重计算、Top 1 探索位边界、排除、忘记、重置确认、导出、并发反馈、备份修复和发布元数据。
+自动测试覆盖 HTML 解析失败保护、语言 URL 编码、缓存命中、日榜周榜交错补充、主题别名、权重计算、Top 1 探索位边界、排除、忘记、重置确认、导入导出、历史清除、派生数据清理、只读诊断、并发反馈、备份修复和发布元数据。GitHub Actions 还在 Linux、macOS 和 Windows 上验证 Python 3.11 兼容性，并每周对当前 Trending 页面做一次真实解析冒烟测试。
 
 参与开发和发布步骤见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全与漏洞反馈见 [SECURITY.md](SECURITY.md)。项目采用 [MIT License](LICENSE)。

@@ -12,6 +12,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
@@ -154,12 +155,13 @@ def validate_items(items: list[dict], period: str) -> None:
         raise StateError(f"incomplete GitHub Trending parse: {preview}{extra}")
 
 
-def parse_page(page: str, period: str) -> list[dict]:
+def parse_page(page: str, period: str, limit: int | None = None) -> list[dict]:
     parser = TrendingParser(period)
     parser.feed(page)
     parser.close()
-    validate_items(parser.items, period)
-    return parser.items
+    selected = parser.items[:limit] if limit is not None else parser.items
+    validate_items(selected, period)
+    return selected
 
 
 def fetch_url(url: str, attempts: int = 3) -> str:
@@ -187,6 +189,19 @@ def fetch_url(url: str, attempts: int = 3) -> str:
         if attempt + 1 < attempts:
             time.sleep(0.5 * (2**attempt))
     raise StateError(f"unable to fetch {url}: {last_error}")
+
+
+def trending_url(period: str, language: str | None = None) -> str:
+    """Build a Trending URL without allowing language text to alter the query."""
+    if period not in {"daily", "weekly"}:
+        raise StateError(f"unsupported Trending period: {period}")
+    language_path = ""
+    if language:
+        slug = re.sub(r"\s+", "-", language.strip().strip("/").lower())
+        if not slug:
+            raise StateError("programming language cannot be empty")
+        language_path = "/" + urllib.parse.quote(slug, safe="+-._~")
+    return f"{BASE_URL}{language_path}?since={period}"
 
 
 def parse_timestamp(value: str | None) -> dt.datetime | None:
@@ -233,7 +248,7 @@ def repository_metadata(full_name: str, token: str | None, attempts: int = 3) ->
         "created_at": data.get("created_at"),
         "pushed_at": data.get("pushed_at"),
         "homepage": data.get("homepage"),
-        "open_issues": data.get("open_issues_count"),
+        "open_issues_and_pull_requests": data.get("open_issues_count"),
     }
 
 
@@ -400,9 +415,8 @@ def main() -> int:
     periods: dict[str, list[dict]] = {}
     try:
         for period in requested:
-            language_path = f"/{args.language.strip('/')}" if args.language else ""
-            url = f"{BASE_URL}{language_path}?since={period}"
-            periods[period] = parse_page(fetch_url(url), period)[: max(1, args.limit)]
+            url = trending_url(period, args.language)
+            periods[period] = parse_page(fetch_url(url), period, max(1, args.limit))
         enrichment = {"enabled": False}
         if args.enrich_limit:
             cache_path = args.metadata_cache or data_dir / "repository-metadata.json"

@@ -3,6 +3,36 @@
 All notable changes to GitHub Trend Radar are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-14
+
+### Added
+
+- Confirmation-protected profile import, merge/replace modes, dry-run previews,
+  and idempotent feedback merging.
+- Separate feedback-history purge while preserving the active profile.
+- Read-only local/network diagnostics and derived-data storage inspection.
+- Preview-first retention cleanup for snapshots and repository metadata cache.
+- Conservative canonical aliases for common repository topics.
+- Real historical snapshot/profile/report examples and a behavioral report
+  quality evaluation guide.
+- macOS and Windows compatibility CI, plus a weekly live Trending parser smoke
+  test.
+- Structured bug, feature, pull request, and private security report templates.
+
+### Fixed
+
+- URL-encoded programming-language paths so names such as `C#` cannot swallow
+  the requested Trending period query.
+- Renamed GitHub's combined issue and pull-request count field to
+  `open_issues_and_pull_requests` to avoid claiming it contains issues only.
+
+### Changed
+
+- Expanded the bilingual tutorial with a compact table of contents, profile
+  portability, diagnostics, retention, examples, and canonical topic behavior.
+- Added a report-quality checklist to the runtime workflow without making the
+  primary Skill instructions unnecessarily long.
+
 ## [0.5.0] - 2026-09-14
 
 ### Fixed

@@ -11,7 +11,20 @@ GitHub Trend Radar is a small, transparent, and auditable Agent Skill. Run it ma
 
 It does not schedule notifications, star or fork repositories, install trending code, or interpret silence as dislike.
 
-Current version: `0.5.0`. Source: [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current version: `0.6.0`. Source: [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar). See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Contents
+
+- [Feature overview](#feature-overview)
+- [Recommended installation](#recommended-installation)
+- [Three-minute start](#three-minute-start)
+- [Teaching and correcting preferences](#teaching-and-correcting-preferences)
+- [Ranking](#ranking)
+- [Local data, metadata cache, and privacy](#local-data-metadata-cache-and-privacy)
+- [Advanced usage](#advanced-usage-run-the-scripts-directly)
+- [Update and remove](#update-and-remove)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Feature overview
 
@@ -26,9 +39,10 @@ Current version: `0.5.0`. Source: [yuzilan/github-trend-radar](https://github.co
 | Preference learning | Distinguishes investigation, explicit interest, and actual use |
 | Exclude and restore | Excludes an exact repository or named topic and can restore it later |
 | Forget and reset | Removes active preferences; full reset requires confirmation |
-| Inspect and export | Shows learned state and exports the profile with feedback history |
+| Inspect, import, and export | Shows learned state and safely moves profiles with feedback history |
 | Local metadata cache | Reduces repeated GitHub API requests |
 | Historical comparison | Marks repeats and evidence-backed movement when snapshots allow it |
+| Diagnostics and retention | Checks the environment read-only and previews cleanup of rebuildable data |
 
 ## Recommended installation
 
@@ -92,7 +106,7 @@ Show only Python projects from this week's GitHub Trending list.
 Show the first five Rust projects from today's list.
 ```
 
-The language becomes part of the GitHub Trending path. If GitHub does not recognize it or returns incomplete markup, the skill fails clearly rather than substituting another leaderboard.
+The language is normalized and safely URL-encoded as part of the GitHub Trending path, so names such as `C#` and `Visual Basic` cannot corrupt the period query. If GitHub does not recognize it or returns incomplete markup, the skill fails clearly rather than substituting another leaderboard.
 
 ### Choose a different result count
 
@@ -253,6 +267,7 @@ Override the location with `GITHUB_TREND_RADAR_HOME` or any script's `--data-dir
 | `profile.json` | Active weights and exclusions | User state; do not delete casually |
 | `profile.json.bak` | Previous profile backup | Used for repair |
 | `feedback.jsonl` | Append-only feedback events | User audit data |
+| `feedback.jsonl.bak` | Previous feedback before an import replacement | Temporary recovery aid |
 | `repository-metadata.json` | Public topics, license, and maintenance metadata | Yes |
 | `snapshots/*.json` | Validated leaderboard observations | Can accumulate again |
 | `latest-daily-ranking.json` | Latest daily ranking | Yes |
@@ -272,6 +287,14 @@ By default, the skill interleaves daily and weekly candidates and enriches up to
 - `--refresh-metadata` to rebuild the cache.
 
 The cache contains only rebuildable public information. Rebuilding it never changes user preferences.
+
+### Topic aliases
+
+Topics use a small, conservative, inspectable alias map. For example, `ai-agents` becomes `ai-agent`, `devtools` becomes `developer-tools`, and `llms` becomes `llm`. When a conversion occurs, the feedback event retains `topic_aliases` for auditing. The skill does not use fuzzy model guesses to merge unrelated categories.
+
+### Retention and cleanup boundary
+
+`maintenance.py prune` handles only rebuildable snapshots and public metadata cache entries. It previews by default and deletes only with `--apply`; it never removes `profile.json` or `feedback.jsonl`. Defaults are 180 days for snapshots and 90 days for metadata. This is a manual tool and never runs in the background.
 
 ### GitHub token
 
@@ -438,13 +461,84 @@ python3 <skill-dir>/scripts/profile.py export \
   --force
 ```
 
-### 9. Repair from the backup
+### 9. Import profile and feedback
+
+Preview a merge without writing anything:
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json \
+  --dry-run
+```
+
+Apply the default merge after review:
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json
+```
+
+Merge takes the greater weight from each profile, unions exclusions and notes, and deduplicates complete feedback events. Re-importing the same export therefore does not repeatedly raise interest. A complete replacement requires explicit confirmation:
+
+```bash
+python3 <skill-dir>/scripts/profile.py import \
+  --input /path/to/github-trend-profile.json \
+  --mode replace \
+  --confirm-replace
+```
+
+Replacement keeps one `.bak` for the previous profile and feedback file. Imported strings are data, never agent instructions.
+
+### 10. Purge feedback history but retain active preferences
+
+The command refuses to run without confirmation:
+
+```bash
+python3 <skill-dir>/scripts/profile.py purge-history --confirm-purge
+```
+
+This empties `feedback.jsonl` and removes its old backup without changing active weights or exclusions in `profile.json`. The skill provides no undo for the purged history; export first if it must be retained.
+
+### 11. Run read-only diagnostics
+
+```bash
+python3 <skill-dir>/scripts/doctor.py
+```
+
+It checks Python, the data directory, profile, backup, feedback log, metadata cache, GitHub Trending parsing, and GitHub API limits. It changes no data and never prints the token. Use `--offline` without network and `--json` for machine-readable output.
+
+### 12. Inspect storage and prune rebuildable data
+
+```bash
+python3 <skill-dir>/scripts/maintenance.py status
+python3 <skill-dir>/scripts/maintenance.py prune
+```
+
+The second command is a preview. After checking its exact paths and entries, apply it explicitly:
+
+```bash
+python3 <skill-dir>/scripts/maintenance.py prune \
+  --snapshot-days 180 \
+  --metadata-days 90 \
+  --apply
+```
+
+Snapshots whose dates cannot be read are skipped rather than deleted speculatively.
+
+### 13. Repair from the backup
 
 ```bash
 python3 <skill-dir>/scripts/profile.py repair
 ```
 
 This replaces the active profile with `profile.json.bak`. Inspect the error and backup first; repair is not an ordinary retry and must not run silently.
+
+### 14. Inspect real format examples
+
+- [Historical daily report excerpt](examples/sample-daily-report.en.md)
+- [Matching Trending snapshot](examples/sample-snapshot.json)
+- [Redacted sample profile](examples/sample-profile.json)
+- [Report quality checklist](references/report-quality.md)
 
 </details>
 
@@ -475,6 +569,8 @@ Confirm that installation completed without an error, then create a new task. An
 ### GitHub Trending fetch fails
 
 GitHub has no official Trending API, so this project reads the public Trending page. Network failures, changed markup, or incomplete responses fail clearly rather than producing a partial report or silently substituting a recently-created-repositories search.
+
+Run `python3 <skill-dir>/scripts/doctor.py` first to distinguish local-state, Trending parser, and GitHub API-limit problems.
 
 ### GitHub API limit is exhausted
 
@@ -509,9 +605,9 @@ This skill currently implements and validates daily and weekly only. It does not
 ```bash
 python3 -m unittest discover -s tests -v
 ruff check scripts tests
-python3 scripts/release_check.py --strict --tag v0.5.0
+python3 scripts/release_check.py --strict --tag v0.6.0
 ```
 
-Tests cover fail-closed HTML parsing, metadata-cache hits, interleaved daily/weekly enrichment, interest scaling, the Top 1 exploration boundary, exclusions, forgetting, reset confirmation, export, concurrent feedback, backup repair, and release metadata.
+Tests cover fail-closed HTML parsing, language URL encoding, cache hits, interleaved enrichment, topic aliases, interest scaling, the Top 1 exploration boundary, exclusions, forgetting, reset confirmation, import/export, history purge, derived-data cleanup, read-only diagnostics, concurrent feedback, backup repair, and release metadata. GitHub Actions also verifies Python 3.11 on Linux, macOS, and Windows and runs a weekly live parser smoke test against the current Trending page.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release steps and [SECURITY.md](SECURITY.md) for private vulnerability reporting. Licensed under the [MIT License](LICENSE).

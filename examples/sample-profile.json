@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "positive_repositories": {
+    "justvugg/colibri": 2.0
+  },
+  "positive_topics": {
+    "developer-tools": 3.0,
+    "local-first": 3.0
+  },
+  "excluded_repositories": [],
+  "excluded_topics": [
+    "low-code"
+  ],
+  "notes": [
+    "示例画像，不是真实用户数据"
+  ],
+  "updated_at": "2026-09-13T18:00:00+00:00"
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-09-13T17:56:25.346631+00:00",
+  "previous_snapshot_at": null,
+  "seconds_since_previous": null,
+  "source": "https://github.com/trending",
+  "filters": {
+    "period": "both",
+    "programming_language": null
+  },
+  "enrichment": {
+    "enabled": true,
+    "requested_limit": 3,
+    "enriched_repositories": 2,
+    "cache_hits": 0,
+    "api_requests": 3,
+    "errors": 1,
+    "ttl_hours": 24.0
+  },
+  "periods": {
+    "daily": [
+      {
+        "full_name": "JustVugg/colibri",
+        "description": "Run frontier MoE models on hardware you already own — pure C, zero deps, experts streamed from disk.",
+        "language": "C",
+        "stars": 29346,
+        "forks": 3204,
+        "period_stars": 960,
+        "period": "daily",
+        "topics": [],
+        "github_position": 1,
+        "url": "https://github.com/JustVugg/colibri",
+        "license": "Apache-2.0",
+        "archived": false,
+        "created_at": "2026-07-01T12:27:49Z",
+        "pushed_at": "2026-09-13T15:19:35Z",
+        "homepage": "https://justvugg.github.io/colibri",
+        "open_issues_and_pull_requests": 119,
+        "stars_since_previous": null,
+        "stars_per_hour_since_previous": null,
+        "in_both_periods": false
+      },
+      {
+        "full_name": "ever-co/ever-gauzy",
+        "description": "Open business management platform covering ERP, CRM, HRM, ATS and project management.",
+        "language": "TypeScript",
+        "stars": 4827,
+        "forks": 924,
+        "period_stars": 58,
+        "period": "daily",
+        "topics": ["crm", "erp", "project-management", "time-tracking"],
+        "github_position": 2,
+        "url": "https://github.com/ever-co/ever-gauzy",
+        "license": "AGPL-3.0",
+        "archived": false,
+        "created_at": "2019-06-02T09:47:13Z",
+        "pushed_at": "2026-09-13T17:49:33Z",
+        "homepage": "https://gauzy.co",
+        "open_issues_and_pull_requests": 454,
+        "stars_since_previous": null,
+        "stars_per_hour_since_previous": null,
+        "in_both_periods": false
+      },
+      {
+        "full_name": "bilawalsidhu/gods-eye-view",
+        "description": "A browser-based 3D globe for exploring live open spatial-intelligence data.",
+        "language": "JavaScript",
+        "stars": 31431,
+        "forks": 6305,
+        "period_stars": 2898,
+        "period": "daily",
+        "topics": [],
+        "github_position": 3,
+        "url": "https://github.com/bilawalsidhu/gods-eye-view",
+        "stars_since_previous": null,
+        "stars_per_hour_since_previous": null,
+        "in_both_periods": true
+      }
+    ],
+    "weekly": [
+      {
+        "full_name": "bilawalsidhu/gods-eye-view",
+        "description": "A browser-based 3D globe for exploring live open spatial-intelligence data.",
+        "language": "JavaScript",
+        "stars": 31431,
+        "forks": 6305,
+        "period_stars": 10510,
+        "period": "weekly",
+        "topics": [],
+        "github_position": 4,
+        "url": "https://github.com/bilawalsidhu/gods-eye-view",
+        "stars_since_previous": null,
+        "stars_per_hour_since_previous": null,
+        "in_both_periods": true
+      }
+    ]
+  }
+}

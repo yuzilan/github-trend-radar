@@ -1,0 +1,21 @@
+name: GitHub Trending smoke test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-current-page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Fetch and validate current daily Trending page
+        run: python scripts/fetch_trending.py --data-dir "${RUNNER_TEMP}/github-trend-radar-smoke" --period daily --limit 5 --enrich-limit 0

@@ -15,6 +15,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import fetch_trending  # noqa: E402
+import doctor  # noqa: E402
+import maintenance  # noqa: E402
 import profile  # noqa: E402
 import rank_trending  # noqa: E402
 import state  # noqa: E402
@@ -35,6 +37,13 @@ def article(name: str, *, stars: int = 1000, gain: int = 50, period: str = "dail
 
 
 class FetchTests(unittest.TestCase):
+    def test_language_path_is_encoded_without_losing_period_query(self) -> None:
+        self.assertEqual(fetch_trending.trending_url("daily", "C#"), "https://github.com/trending/c%23?since=daily")
+        self.assertEqual(
+            fetch_trending.trending_url("weekly", "Visual Basic"),
+            "https://github.com/trending/visual-basic?since=weekly",
+        )
+
     def test_parser_extracts_required_fields(self) -> None:
         items = fetch_trending.parse_page(article("owner/repo"), "daily")
         self.assertEqual(items[0]["full_name"], "owner/repo")
@@ -46,6 +55,12 @@ class FetchTests(unittest.TestCase):
         broken = article("owner/repo").replace("50 stars today", "not available")
         with self.assertRaises(state.StateError):
             fetch_trending.parse_page(broken, "daily")
+
+    def test_parser_validates_only_requested_candidates(self) -> None:
+        page = article("owner/good") + article("owner/zero", gain=0)
+        self.assertEqual(len(fetch_trending.parse_page(page, "daily", 1)), 1)
+        with self.assertRaises(state.StateError):
+            fetch_trending.parse_page(page, "daily", 2)
 
     def test_enrichment_propagates_to_both_periods(self) -> None:
         periods = {
@@ -113,6 +128,19 @@ class FetchTests(unittest.TestCase):
 
 
 class RankingTests(unittest.TestCase):
+    def test_distributed_sample_snapshot_matches_reported_order_and_scores(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        snapshot = state.load_json(root / "examples" / "sample-snapshot.json")
+        result = rank_trending.rank(snapshot, profile.default_profile(), "daily", 3)
+        self.assertEqual(
+            [(item["full_name"], item["objective_heat"]) for item in result["objective_top"]],
+            [
+                ("bilawalsidhu/gods-eye-view", 73.68),
+                ("JustVugg/colibri", 57.89),
+                ("ever-co/ever-gauzy", 13.16),
+            ],
+        )
+
     def test_percentiles_treat_ties_equally(self) -> None:
         self.assertEqual(rank_trending.percentile_scores([0, 0, 1]), [0.0, 0.0, 1.0])
         self.assertEqual(rank_trending.percentile_scores([0, 0]), [0.0, 0.0])
@@ -121,6 +149,9 @@ class RankingTests(unittest.TestCase):
     def test_short_topic_does_not_match_inside_word(self) -> None:
         self.assertFalse(rank_trending.topic_matches("ai", "a tool for maintaining servers"))
         self.assertTrue(rank_trending.topic_matches("ai", "an ai tool"))
+
+    def test_topic_alias_matches_canonical_preference(self) -> None:
+        self.assertIn("ai-agent", rank_trending.search_blob({"topics": ["ai-agents"]}))
 
     def test_exact_repo_interest_and_exclusion(self) -> None:
         items = [
@@ -328,6 +359,126 @@ class ProfileAndStateTests(unittest.TestCase):
             self.assertEqual(current["positive_repositories"]["owner/repo"], 4.0)
             self.assertEqual(current["positive_topics"]["python"], 4.0)
             self.assertEqual(len((data_dir / "feedback.jsonl").read_text(encoding="utf-8").splitlines()), 8)
+
+    def test_topic_aliases_are_canonicalized_and_audited(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            _, event = profile.record_event(data_dir, signal="like-topic", topics=["AI Agents", "devtools"])
+            current = state.load_json(data_dir / "profile.json")
+            self.assertEqual(event["topics"], ["ai-agent", "developer-tools"])
+            self.assertEqual(event["topic_aliases"], {"ai agents": "ai-agent", "devtools": "developer-tools"})
+            self.assertEqual(current["positive_topics"], {"ai-agent": 3.0, "developer-tools": 3.0})
+
+    def test_import_merge_is_idempotent_and_dry_run_does_not_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            destination = root / "destination"
+            export_path = root / "export.json"
+            profile.record_event(source, signal="interested", repo="Owner/Repo", topics=["AI Agents"])
+            profile.export_state(source, export_path)
+            preview = profile.import_state(destination, export_path, dry_run=True)
+            self.assertTrue(preview["dry_run"])
+            self.assertFalse(destination.exists())
+            profile.import_state(destination, export_path)
+            profile.import_state(destination, export_path)
+            current = state.load_json(destination / "profile.json")
+            self.assertEqual(current["positive_repositories"], {"owner/repo": 2.0})
+            self.assertEqual(current["positive_topics"], {"ai-agent": 2.0})
+            self.assertEqual(len(profile.recent_events(destination / "feedback.jsonl", 10)), 1)
+
+    def test_replace_import_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            destination = root / "destination"
+            export_path = root / "export.json"
+            profile.record_event(source, signal="interested", repo="owner/new", topics=["python"])
+            profile.export_state(source, export_path)
+            profile.record_event(destination, signal="interested", repo="owner/old", topics=["rust"])
+            with self.assertRaises(state.StateError):
+                profile.import_state(destination, export_path, mode="replace")
+            profile.import_state(destination, export_path, mode="replace", confirm_replace=True)
+            current = state.load_json(destination / "profile.json")
+            self.assertEqual(current["positive_repositories"], {"owner/new": 2.0})
+
+    def test_import_rejects_timestamp_without_timezone(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            import_path = Path(directory) / "invalid.json"
+            import_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "profile": profile.default_profile(),
+                        "feedback": [
+                            {
+                                "timestamp": "2026-01-01T12:00:00",
+                                "signal": "detail",
+                                "repository": "owner/repo",
+                                "topics": [],
+                                "note": None,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(state.StateError):
+                profile.import_state(Path(directory) / "destination", import_path, dry_run=True)
+
+    def test_purge_history_keeps_active_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            profile.record_event(data_dir, signal="interested", repo="owner/repo", topics=["python"])
+            with self.assertRaises(state.StateError):
+                profile.purge_history(data_dir)
+            profile.purge_history(data_dir, confirm_purge=True)
+            current = state.load_json(data_dir / "profile.json")
+            self.assertEqual(current["positive_repositories"], {"owner/repo": 2.0})
+            self.assertEqual((data_dir / "feedback.jsonl").read_text(encoding="utf-8"), "")
+
+
+class MaintenanceAndDoctorTests(unittest.TestCase):
+    def test_prune_defaults_to_preview_and_only_removes_derived_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            profile.record_event(data_dir, signal="interested", repo="owner/repo", topics=["python"])
+            snapshots = data_dir / "snapshots"
+            snapshots.mkdir()
+            old_snapshot = snapshots / "old.json"
+            old_snapshot.write_text(json.dumps({"generated_at": "2025-01-01T00:00:00+00:00"}), encoding="utf-8")
+            cache_path = data_dir / "repository-metadata.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "repositories": {
+                            "owner/repo": {"fetched_at": "2025-01-01T00:00:00+00:00", "metadata": {}}
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            current = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+            preview = maintenance.prune(data_dir, snapshot_days=30, metadata_days=30, current_time=current)
+            self.assertFalse(preview["applied"])
+            self.assertTrue(old_snapshot.exists())
+            maintenance.prune(data_dir, snapshot_days=30, metadata_days=30, apply=True, current_time=current)
+            self.assertFalse(old_snapshot.exists())
+            self.assertEqual(state.load_json(cache_path)["repositories"], {})
+            self.assertTrue((data_dir / "profile.json").exists())
+            self.assertTrue((data_dir / "feedback.jsonl").exists())
+
+    def test_doctor_offline_reports_valid_and_corrupt_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            profile.initialize(data_dir)
+            healthy = doctor.diagnose(data_dir, offline=True)
+            self.assertTrue(healthy["ok"])
+            (data_dir / "profile.json").write_text("{broken", encoding="utf-8")
+            broken = doctor.diagnose(data_dir, offline=True)
+            self.assertFalse(broken["ok"])
+            self.assertTrue(any(item["name"] == "profile" and item["status"] == "fail" for item in broken["checks"]))
 
 
 if __name__ == "__main__":
