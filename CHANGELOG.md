@@ -12,6 +12,8 @@ All notable changes to GitHub Trend Radar are documented here. The project follo
 - Replaced publishing placeholders with the final GitHub and Skills CLI paths.
 - Added a machine-readable `REPOSITORY` identity checked against both READMEs.
 - Enabled strict release validation for tag `v0.4.0`.
+- Updated the official checkout and Python setup Actions to their Node.js 24-based
+  stable major versions.
 
 ## [0.3.0] - 2026-09-13
 
