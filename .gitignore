@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.ruff_cache/
+.pytest_cache/
+.venv/
+.coverage
+dist/
+build/
+.github-trend-radar/
+github-trend-radar-data/

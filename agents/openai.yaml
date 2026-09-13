@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub 热榜雷达"
+  short_description: "每日手动生成 GitHub 热榜及个性化中文解读"
+  default_prompt: "使用 $github-trend-radar 生成今天的 GitHub 客观热榜和我的个性化推荐。"
