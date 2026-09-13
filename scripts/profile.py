@@ -25,6 +25,9 @@ SIGNALS = tuple(SIGNAL_WEIGHTS) + (
     "exclude-topic",
     "restore-repo",
     "restore-topic",
+    "forget-repo",
+    "forget-topic",
+    "reset-profile",
 )
 MAX_WEIGHT = 10.0
 
@@ -86,7 +89,9 @@ def apply_event(profile: dict, event: dict) -> dict:
     signal = event["signal"]
     repo = event.get("repository") or ""
     topics = event.get("topics") or []
-    if signal in SIGNAL_WEIGHTS:
+    if signal == "reset-profile":
+        profile = default_profile()
+    elif signal in SIGNAL_WEIGHTS:
         weight = SIGNAL_WEIGHTS[signal]
         increase(profile.setdefault("positive_topics", {}), topics, weight)
         if repo and signal != "like-topic":
@@ -99,6 +104,13 @@ def apply_event(profile: dict, event: dict) -> dict:
         profile["excluded_repositories"] = [value for value in profile.get("excluded_repositories", []) if value != repo]
     elif signal == "restore-topic":
         profile["excluded_topics"] = [value for value in profile.get("excluded_topics", []) if value not in topics]
+    elif signal == "forget-repo":
+        profile.setdefault("positive_repositories", {}).pop(repo, None)
+        profile["excluded_repositories"] = [value for value in profile.get("excluded_repositories", []) if value != repo]
+    elif signal == "forget-topic":
+        for topic in topics:
+            profile.setdefault("positive_topics", {}).pop(topic, None)
+        profile["excluded_topics"] = [value for value in profile.get("excluded_topics", []) if value not in topics]
 
     profile["excluded_repositories"] = sorted(set(profile.get("excluded_repositories", [])))
     profile["excluded_topics"] = sorted(set(profile.get("excluded_topics", [])))
@@ -110,11 +122,15 @@ def apply_event(profile: dict, event: dict) -> dict:
     return profile
 
 
-def validate_event(signal: str, repo: str, topics: list[str]) -> None:
-    if signal in ("detail", "interested", "tried", "exclude-repo", "restore-repo") and not repo:
+def validate_event(signal: str, repo: str, topics: list[str], *, confirm_reset: bool = False) -> None:
+    if signal not in SIGNALS:
+        raise StateError(f"unknown feedback signal: {signal}")
+    if signal in ("detail", "interested", "tried", "exclude-repo", "restore-repo", "forget-repo") and not repo:
         raise StateError(f"--repo is required for {signal}")
-    if signal in ("exclude-topic", "restore-topic", "like-topic") and not topics:
+    if signal in ("exclude-topic", "restore-topic", "like-topic", "forget-topic") and not topics:
         raise StateError(f"--topics is required for {signal}")
+    if signal == "reset-profile" and not confirm_reset:
+        raise StateError("--confirm-reset is required for reset-profile")
 
 
 def record_event(
@@ -124,12 +140,13 @@ def record_event(
     repo: str = "",
     topics: list[str] | None = None,
     note: str = "",
+    confirm_reset: bool = False,
 ) -> tuple[Path, dict]:
     data_dir, _ = initialize(data_dir_value)
     profile_path, feedback_path = paths(data_dir)
     normalized_repo = repo.strip().lower()
     normalized_topics = normalized(topics)
-    validate_event(signal, normalized_repo, normalized_topics)
+    validate_event(signal, normalized_repo, normalized_topics, confirm_reset=confirm_reset)
     event = {
         "timestamp": now(),
         "signal": signal,
@@ -176,6 +193,27 @@ def show_state(data_dir_value: Path | str | None, event_count: int) -> dict:
     }
 
 
+def export_state(data_dir_value: Path | str | None, output: Path, *, force: bool = False) -> Path:
+    data_dir = resolve_data_dir(data_dir_value)
+    profile_path, feedback_path = paths(data_dir)
+    output = output.expanduser().resolve()
+    if output.exists() and not force:
+        raise StateError(f"export already exists; pass --force to replace it: {output}")
+    with state_lock(data_dir):
+        profile = migrate_profile(load_json(profile_path))
+        feedback = recent_events(feedback_path, 2**31 - 1)
+        atomic_write_json(
+            output,
+            {
+                "schema_version": 1,
+                "exported_at": now(),
+                "profile": profile,
+                "feedback": feedback,
+            },
+        )
+    return output
+
+
 def repair(data_dir_value: Path | str | None) -> Path:
     data_dir = resolve_data_dir(data_dir_value)
     profile_path, _ = paths(data_dir)
@@ -198,10 +236,16 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--repo", default="")
     record_parser.add_argument("--topics", nargs="*")
     record_parser.add_argument("--note", default="")
+    record_parser.add_argument("--confirm-reset", action="store_true")
 
     show_parser = subparsers.add_parser("show")
     show_parser.add_argument("--data-dir", type=Path)
     show_parser.add_argument("--events", type=int, default=10)
+
+    export_parser = subparsers.add_parser("export")
+    export_parser.add_argument("--data-dir", type=Path)
+    export_parser.add_argument("--output", type=Path, required=True)
+    export_parser.add_argument("--force", action="store_true")
     return parser
 
 
@@ -220,10 +264,13 @@ def main() -> int:
                 repo=args.repo,
                 topics=args.topics,
                 note=args.note,
+                confirm_reset=args.confirm_reset,
             )
             print(json.dumps({"data_dir": str(data_dir), "event": event}, ensure_ascii=False, indent=2))
         elif args.command == "repair":
             print(repair(args.data_dir))
+        elif args.command == "export":
+            print(export_state(args.data_dir, args.output, force=args.force))
         else:
             print(json.dumps(show_state(args.data_dir, args.events), ensure_ascii=False, indent=2))
     except StateError as error:

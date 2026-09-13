@@ -2,76 +2,97 @@
 
 [简体中文](README_zh-CN.md)
 
-A small, auditable agent skill for manually generating GitHub daily or weekly Top 10 reports, explaining repositories in plain language, investigating selected projects, and learning user-controlled recommendation preferences over time.
+GitHub Trend Radar is a small, transparent, and auditable Agent Skill. Run it manually to collect a GitHub daily or weekly Top 10, explain each repository in plain language, investigate selected projects, and gradually personalize recommendations from explicit user feedback.
 
-The deterministic Python helpers fetch, validate, rank, and store feedback. The host agent reads primary repository sources and writes the human-facing explanation. It is intentionally not a scheduler, notification service, repository executor, or opaque machine-learning recommender.
+It does not schedule notifications, star or fork repositories, install trending code, or interpret silence as dislike.
 
-## Install
+Current version: `0.5.0`. Source: [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-After this repository is published, install the skill with the Skills CLI:
+## Recommended installation
+
+For personal use across projects, install it at user scope:
+
+```bash
+npx skills add yuzilan/github-trend-radar --skill github-trend-radar --global
+```
+
+Omit `--global` for a project-local trial:
 
 ```bash
 npx skills add yuzilan/github-trend-radar --skill github-trend-radar
 ```
 
-No third-party Python packages are required. Python 3.9 or newer is recommended.
+The runtime uses only the Python standard library and supports Python 3.9 or newer. Invoke the skill in a new conversation turn after installation.
 
-Current version: `0.4.0`. See [CHANGELOG.md](CHANGELOG.md) for release history.
+## Three-minute start
 
-Source repository: [github.com/yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar)
-
-## Use
-
-Invoke `$github-trend-radar`, or ask naturally:
+Ask naturally; no script commands are required:
 
 - “Show today's GitHub Top 10.”
-- “Summarize this week's GitHub trending repositories in Chinese.”
-- “Investigate number 3 in detail.”
-- “I am not interested in this repository; exclude it.”
-- “Show what you have learned about my preferences.”
+- “Summarize this week's GitHub trending repositories.”
+- “Show only weekly Python trending projects.”
+- “Investigate number 3, focusing on architecture and setup.”
 
-The skill keeps objective popularity separate from personalized relevance. Exclusions affect recommendations without rewriting the factual objective list.
+A normal report contains the collection time and period, an objective Top 10, a separate personalized Top 10, plain-language project cards, caveats, recommendation reasons, and direct repository links. Exclusions change recommendations without rewriting the factual objective list.
 
-## Local data and privacy
+## Teaching and correcting preferences
 
-When `~/Documents/Codex/` exists, the default data directory is:
+| User intent | Stored scope |
+| --- | --- |
+| Investigate a repository | One weak interest signal |
+| Explicitly interested | Repository and up to three narrow topics |
+| Actually tried it | Stronger repository and topic interest |
+| Not interested in this repository | Exact repository exclusion only |
+| Not interested in this category | Only the explicitly named category |
+| Restore a repository or topic | Remove the matching exclusion |
+| Forget this repository or topic | Remove its active weight and exclusion |
 
-```text
-~/Documents/Codex/github-trend-radar-data/
-```
+Ask “What have you learned about my preferences?” to inspect the profile. Forgetting changes the active recommendation profile while retaining the local append-only audit history. Resetting all active preferences requires an explicit confirmation immediately before the action.
 
-Other environments fall back to `~/.github-trend-radar/`. Override either default with `GITHUB_TREND_RADAR_HOME` or `--data-dir`. The directory contains the current profile, append-only feedback history, snapshots, latest rankings, and one profile backup. Credentials are never written to these files. An optional `GITHUB_TOKEN` is read only from the environment when API enrichment is requested.
+The profile and feedback history can be exported to a portable JSON file. Existing exports are not overwritten unless explicitly allowed.
 
 ## Ranking
 
-Objective heat combines period star gain, GitHub Trending position, relative growth, daily/weekly overlap, and comparable snapshot velocity. Personalized ranking is 75% objective heat and 25% explicit or observed interest match, with hard user-controlled exclusions and one exploration position.
+Objective heat combines GitHub Trending period star gain, original position, relative growth, daily/weekly overlap, and comparable local snapshot velocity.
 
-This is a discovery heuristic, not an official GitHub score and not a software-quality rating. See `references/ranking-and-feedback.md` for the exact rules.
+Personalized ranking uses:
 
-## Reliability
+```text
+75% objective heat + 25% interest match
+```
 
-- GitHub Trending HTML is validated before a snapshot is saved.
-- Transient network failures are retried; a different leaderboard is never silently substituted.
-- Equal metric values receive equal percentile scores.
-- Profile changes use a lock, atomic replacement, and a last-known-good backup.
-- Repository and topic weights are capped to limit runaway reinforcement.
-- Unknown repositories are never installed or executed by the skill.
+Interest uses a fixed 0—10 scale, so the only matching repository cannot turn one weak investigation into a full preference bonus. Top 10 reports reserve one exploration position; Top 1 requests do not. This is a transparent discovery heuristic, not an official GitHub score or a software-quality rating. See [references/ranking-and-feedback.md](references/ranking-and-feedback.md) for exact rules.
 
-Run the test suite with:
+## Local data, metadata cache, and privacy
+
+When `~/Documents/Codex/` exists, the default data directory is `~/Documents/Codex/github-trend-radar-data/`. Other environments use `~/.github-trend-radar/`. Override either with `GITHUB_TREND_RADAR_HOME` or `--data-dir`.
+
+The directory contains the active profile, append-only feedback, one profile backup, leaderboard snapshots, recent rankings, and a cache of public GitHub repository metadata. By default, up to 25 interleaved daily and weekly candidates are enriched and cached for 24 hours.
+
+The skill works without `GITHUB_TOKEN`, although unauthenticated API limits are lower. When the variable is present, the token is read only from the process environment and is never written to snapshots, caches, profiles, or logs.
+
+## Update and remove
+
+```bash
+npx skills update github-trend-radar --global --yes
+npx skills remove github-trend-radar --global --yes
+```
+
+Removing the skill does not automatically delete preference data stored outside the skill directory. Back up and verify that directory separately before deleting user data.
+
+## Troubleshooting
+
+- **Trending fetch fails:** GitHub has no official Trending API. Incomplete or changed HTML fails closed instead of producing a partial report or silently substituting another leaderboard.
+- **Metadata cache is unsupported or corrupt:** rerun collection with `--refresh-metadata`; the cache is derived public data and rebuilding it does not change feedback.
+- **Profile is corrupt:** inspect the reported path and backup first. `profile.py repair` restores the previous backup and must not run silently.
+- **Recommendations feel wrong:** inspect the profile, then forget or exclude the exact repository or topic. Stored weights remain visible and editable.
+
+## Development
 
 ```bash
 python3 -m unittest discover -s tests -v
+ruff check scripts tests
+python3 scripts/release_check.py --strict --tag v0.5.0
 ```
 
-Before publishing a release, run:
-
-```bash
-python3 scripts/release_check.py --strict --tag v0.4.0
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution and release workflow
-and [SECURITY.md](SECURITY.md) for private vulnerability reporting guidance.
-
-## License
-
-MIT
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release steps and [SECURITY.md](SECURITY.md) for private vulnerability reporting guidance. Licensed under MIT.

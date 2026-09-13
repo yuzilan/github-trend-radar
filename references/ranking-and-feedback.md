@@ -22,7 +22,13 @@ Hard-exclude exact repositories and explicitly excluded topics. For the rest:
 
 `personalized = 0.75 * objective_heat + 0.25 * normalized_interest_match`
 
-Interest matching uses exact repository interest plus topic labels found in the repository name, description, language, or verified GitHub topics. If no stored positive repository or topic matches any candidate, keep the objective order and label the result as a cold start.
+Interest matching uses the larger of the exact repository weight and the average
+weight of matched topics. Divide that value by the fixed weight cap of 10; do
+not normalize against the strongest candidate in the current list. This keeps a
+single `detail` event weak even when it is the only preference match. Topic
+labels may be found in the repository name, description, language, or verified
+GitHub topics. If no stored positive repository or topic matches any candidate,
+keep the objective order and label the result as a cold start.
 
 Reserve one of the ten personalized positions for the highest objective-ranked, non-excluded candidate outside the first nine personalized entries. If that candidate is already the tenth personalized entry, no special replacement is needed. This is an exploration slot, not evidence that the user's preferences changed.
 
@@ -34,10 +40,18 @@ Reserve one of the ten personalized positions for the highest objective-ranked, 
 - `like-topic`: +3 for an explicitly named topic.
 - `exclude-repo`: exact repository hard exclusion.
 - `exclude-topic`: explicitly named topic hard exclusion.
+- `forget-repo`: remove the repository's current positive weight and exact exclusion.
+- `forget-topic`: remove the topic's current positive weight and exclusion.
+- `reset-profile`: clear all current preference state only after explicit confirmation.
 
 Repository-directed positive signals also increase that exact repository's weight. Repository and topic weights are capped at 10 so repeated questioning cannot grow without bound.
 
-The event log is append-only. `profile.json` is the current editable state. Restoring an exclusion removes it from current state while retaining the historical event. Profile writes use a lock, an atomic replacement, and `profile.json.bak` as the most recent recoverable copy.
+The event log is append-only. Forgetting or resetting changes the active profile
+but deliberately retains historical feedback for auditability. Tell the user
+this distinction. `profile.json` is the current editable state. Restoring an
+exclusion removes it from current state while retaining the historical event.
+Profile writes use a lock, an atomic replacement, and `profile.json.bak` as the
+most recent recoverable copy.
 
 Do not infer topic exclusions from repository exclusions. Do not infer dislike from lack of follow-up. Do not create sensitive personal categories.
 
@@ -53,6 +67,10 @@ Do not infer topic exclusions from repository exclusions. Do not infer dislike f
 - `updated_at`: last profile mutation time.
 
 `feedback.jsonl` contains timestamped events with signal, repository, topics, and the user's or agent's short note.
+
+`repository-metadata.json` caches public GitHub topics, license, archive state,
+and maintenance metadata for 24 hours by default. It contains no token. Delete
+or rebuild this derived cache without changing user feedback.
 
 When `~/Documents/Codex/` exists, these files live under `~/Documents/Codex/github-trend-radar-data/`; other environments use `~/.github-trend-radar/`. Both defaults are shared across working directories. Set `GITHUB_TREND_RADAR_HOME` or pass `--data-dir` to opt into another location.
 

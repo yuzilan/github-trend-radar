@@ -18,6 +18,7 @@ REQUIRED_ITEM_FIELDS = {
     "period_stars": int,
     "github_position": int,
 }
+INTEREST_WEIGHT_CAP = 10.0
 
 
 def percentile_scores(values: list[float]) -> list[float]:
@@ -124,15 +125,20 @@ def rank(snapshot: dict, profile: dict, period: str, top: int) -> dict:
         item["matched_positive_topics"] = sorted(topic for topic in positive_topics if topic_matches(topic, blob))
         item["matched_excluded_topics"] = sorted(topic for topic in excluded_topics if topic_matches(topic, blob))
         item["excluded"] = name in excluded_repos or bool(item["matched_excluded_topics"])
+        repository_interest = positive_repos.get(name, 0.0)
+        matched_topic_weights = [positive_topics[topic] for topic in item["matched_positive_topics"]]
+        topic_interest = sum(matched_topic_weights) / len(matched_topic_weights) if matched_topic_weights else 0.0
+        item["repository_interest"] = round(repository_interest, 2)
+        item["topic_interest"] = round(topic_interest, 2)
         item["interest_raw"] = round(
-            positive_repos.get(name, 0.0) + sum(positive_topics[topic] for topic in item["matched_positive_topics"]),
+            min(INTEREST_WEIGHT_CAP, max(0.0, repository_interest, topic_interest)),
             2,
         )
 
     max_interest = max((item["interest_raw"] for item in items if not item["excluded"]), default=0.0)
     cold_start = max_interest <= 0
     for item in items:
-        interest = item["interest_raw"] / max_interest if max_interest else 0.0
+        interest = item["interest_raw"] / INTEREST_WEIGHT_CAP
         item["interest_match"] = round(100 * interest, 2)
         item["personalized_score"] = round(
             item["objective_heat"] if cold_start else 0.75 * item["objective_heat"] + 25 * interest,
@@ -143,14 +149,15 @@ def rank(snapshot: dict, profile: dict, period: str, top: int) -> dict:
     eligible = [item for item in items if not item["excluded"]]
     personalized = sorted(eligible, key=lambda item: (-item["personalized_score"], -item["objective_heat"]))
 
-    first_entries = personalized[: max(0, top - 1)]
+    exploration_enabled = top >= 2
+    first_entries = personalized[: max(0, top - 1) if exploration_enabled else top]
     selected = {item["full_name"].lower() for item in first_entries}
     exploration = next(
         (item for item in objective if not item["excluded"] and item["full_name"].lower() not in selected),
         None,
     )
     final_personalized = list(first_entries)
-    if exploration is not None and len(final_personalized) < top:
+    if exploration_enabled and exploration is not None and len(final_personalized) < top:
         exploration = dict(exploration)
         exploration["exploration_slot"] = True
         final_personalized.append(exploration)

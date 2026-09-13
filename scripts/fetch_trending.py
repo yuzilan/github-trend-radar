@@ -13,6 +13,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -20,9 +21,13 @@ from state import StateError, atomic_write_json, load_json, resolve_data_dir
 
 
 BASE_URL = "https://github.com/trending"
-USER_AGENT = "github-trend-radar/2.0 (+manual local research)"
+SKILL_VERSION = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
+USER_AGENT = f"github-trend-radar/{SKILL_VERSION} (+manual local research)"
 TRANSIENT_HTTP_CODES = {429, 500, 502, 503, 504}
 MIN_COMPARABLE_INTERVAL_SECONDS = 15 * 60
+DEFAULT_ENRICH_LIMIT = 25
+DEFAULT_METADATA_TTL_HOURS = 24.0
+METADATA_CACHE_SCHEMA = 1
 
 
 def parse_number(value: str) -> int | None:
@@ -184,7 +189,17 @@ def fetch_url(url: str, attempts: int = 3) -> str:
     raise StateError(f"unable to fetch {url}: {last_error}")
 
 
-def repository_metadata(full_name: str, token: str | None) -> dict:
+def parse_timestamp(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+    except ValueError:
+        return None
+
+
+def repository_metadata(full_name: str, token: str | None, attempts: int = 3) -> dict:
     request = urllib.request.Request(
         f"https://api.github.com/repos/{full_name}",
         headers={
@@ -193,13 +208,24 @@ def repository_metadata(full_name: str, token: str | None) -> dict:
             **({"Authorization": f"Bearer {token}"} if token else {}),
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as error:
-        return {"enrichment_error": f"GitHub repository API HTTP {error.code}"}
-    except (urllib.error.URLError, json.JSONDecodeError) as error:
-        return {"enrichment_error": f"GitHub repository API unavailable: {type(error).__name__}"}
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.load(response)
+            if not isinstance(data, dict):
+                return {"enrichment_error": "GitHub repository API returned a non-object response"}
+            break
+        except urllib.error.HTTPError as error:
+            last_error = error
+            if error.code not in TRANSIENT_HTTP_CODES:
+                return {"enrichment_error": f"GitHub repository API HTTP {error.code}"}
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            last_error = error
+        if attempt + 1 < attempts:
+            time.sleep(0.5 * (2**attempt))
+    else:
+        return {"enrichment_error": f"GitHub repository API unavailable: {type(last_error).__name__}"}
     return {
         "topics": data.get("topics") or [],
         "license": (data.get("license") or {}).get("spdx_id"),
@@ -211,27 +237,94 @@ def repository_metadata(full_name: str, token: str | None) -> dict:
     }
 
 
-def enrich_periods(periods: dict[str, list[dict]], limit: int, token: str | None) -> None:
+def ordered_unique_names(periods: dict[str, list[dict]]) -> list[str]:
+    """Interleave lists so one period cannot consume the whole enrichment budget."""
+    period_names = [name for name in ("daily", "weekly") if name in periods]
+    period_names.extend(name for name in periods if name not in period_names)
     names: list[str] = []
-    for items in periods.values():
-        for item in items:
-            if item["full_name"].lower() not in {value.lower() for value in names}:
-                names.append(item["full_name"])
-    metadata = {name.lower(): repository_metadata(name, token) for name in names[: max(0, limit)]}
+    seen: set[str] = set()
+    largest = max((len(periods[name]) for name in period_names), default=0)
+    for index in range(largest):
+        for period in period_names:
+            items = periods[period]
+            if index >= len(items):
+                continue
+            name = items[index]["full_name"]
+            if name.lower() not in seen:
+                names.append(name)
+                seen.add(name.lower())
+    return names
+
+
+def default_metadata_cache() -> dict:
+    return {"schema_version": METADATA_CACHE_SCHEMA, "repositories": {}}
+
+
+def load_metadata_cache(path: Path | None) -> dict:
+    if path is None or not path.exists():
+        return default_metadata_cache()
+    cache = load_json(path)
+    if cache.get("schema_version") != METADATA_CACHE_SCHEMA or not isinstance(cache.get("repositories"), dict):
+        raise StateError(f"unsupported repository metadata cache: {path}; use --refresh-metadata to rebuild it")
+    return cache
+
+
+def enrich_periods(
+    periods: dict[str, list[dict]],
+    limit: int,
+    token: str | None,
+    *,
+    cache_path: Path | None = None,
+    ttl_hours: float = DEFAULT_METADATA_TTL_HOURS,
+    refresh: bool = False,
+    current_time: dt.datetime | None = None,
+) -> dict:
+    current_time = current_time or dt.datetime.now(dt.timezone.utc)
+    cache = default_metadata_cache() if refresh else load_metadata_cache(cache_path)
+    entries = cache["repositories"]
+    metadata: dict[str, dict] = {}
+    cache_hits = 0
+    errors = 0
+    changed = False
+    misses: list[str] = []
+    for name in ordered_unique_names(periods)[: max(0, limit)]:
+        key = name.lower()
+        entry = entries.get(key)
+        fetched_at = parse_timestamp(entry.get("fetched_at")) if isinstance(entry, dict) else None
+        age = (current_time - fetched_at).total_seconds() if fetched_at else None
+        cached_value = entry.get("metadata") if isinstance(entry, dict) else None
+        if isinstance(cached_value, dict) and age is not None and 0 <= age <= ttl_hours * 3600:
+            metadata[key] = cached_value
+            cache_hits += 1
+            continue
+        misses.append(name)
+
+    if misses:
+        with ThreadPoolExecutor(max_workers=min(4, len(misses))) as executor:
+            fetched_values = executor.map(lambda name: repository_metadata(name, token), misses)
+            fetched = zip(misses, fetched_values)
+            for name, value in fetched:
+                key = name.lower()
+                metadata[key] = value
+                if "enrichment_error" in value:
+                    errors += 1
+                    continue
+                entries[key] = {"fetched_at": current_time.isoformat(), "metadata": value}
+                changed = True
+    if cache_path is not None and (changed or refresh):
+        atomic_write_json(cache_path, cache, backup=True)
     for items in periods.values():
         for item in items:
             if item["full_name"].lower() in metadata:
                 item.update(metadata[item["full_name"].lower()])
-
-
-def parse_timestamp(value: str | None) -> dt.datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
-    except ValueError:
-        return None
+    return {
+        "requested_limit": max(0, limit),
+        "enriched_repositories": len(metadata) - errors,
+        "cache_hits": cache_hits,
+        "api_requests": len(misses),
+        "errors": errors,
+        "ttl_hours": ttl_hours,
+    }
 
 
 def find_previous_snapshot(history_dir: Path, output: Path) -> dict | None:
@@ -277,8 +370,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--period", choices=("daily", "weekly", "both"), default="both")
     parser.add_argument("--limit", type=int, default=25)
-    parser.add_argument("--language", help="Optional GitHub Trending programming-language path")
-    parser.add_argument("--enrich-limit", type=int, default=0, help="Enrich this many unique repos via GitHub API")
+    parser.add_argument(
+        "--programming-language",
+        "--language",
+        dest="language",
+        help="Optional GitHub Trending programming-language path (--language remains as a compatibility alias)",
+    )
+    parser.add_argument(
+        "--enrich-limit",
+        type=int,
+        default=DEFAULT_ENRICH_LIMIT,
+        help="Enrich this many interleaved daily/weekly repos via GitHub API (default: 25; use 0 to disable)",
+    )
+    parser.add_argument("--metadata-cache", type=Path)
+    parser.add_argument("--metadata-ttl-hours", type=float, default=DEFAULT_METADATA_TTL_HOURS)
+    parser.add_argument("--refresh-metadata", action="store_true")
     parser.add_argument("--history-dir", type=Path)
     parser.add_argument("--output", type=Path)
     return parser
@@ -297,8 +403,21 @@ def main() -> int:
             language_path = f"/{args.language.strip('/')}" if args.language else ""
             url = f"{BASE_URL}{language_path}?since={period}"
             periods[period] = parse_page(fetch_url(url), period)[: max(1, args.limit)]
+        enrichment = {"enabled": False}
         if args.enrich_limit:
-            enrich_periods(periods, args.enrich_limit, os.environ.get("GITHUB_TOKEN"))
+            cache_path = args.metadata_cache or data_dir / "repository-metadata.json"
+            enrichment = {
+                "enabled": True,
+                **enrich_periods(
+                    periods,
+                    args.enrich_limit,
+                    os.environ.get("GITHUB_TOKEN"),
+                    cache_path=cache_path,
+                    ttl_hours=max(0.0, args.metadata_ttl_hours),
+                    refresh=args.refresh_metadata,
+                    current_time=generated_at,
+                ),
+            }
         previous = find_previous_snapshot(history_dir, output)
         elapsed = add_previous_metrics(periods, previous, generated_at)
         names = {period: {item["full_name"].lower() for item in items} for period, items in periods.items()}
@@ -312,6 +431,8 @@ def main() -> int:
             "previous_snapshot_at": previous.get("generated_at") if previous else None,
             "seconds_since_previous": elapsed,
             "source": "https://github.com/trending",
+            "filters": {"period": args.period, "programming_language": args.language},
+            "enrichment": enrichment,
             "periods": periods,
         }
         atomic_write_json(output, payload, backup=False)

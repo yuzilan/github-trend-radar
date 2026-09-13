@@ -88,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--strict", action="store_true", help="treat publishing placeholders as errors")
-    parser.add_argument("--tag", help="release tag to compare with VERSION, for example v0.3.0")
+    parser.add_argument("--tag", help="release tag to compare with VERSION, for example v1.2.3")
     return parser
 
 

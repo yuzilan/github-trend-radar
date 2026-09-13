@@ -3,6 +3,32 @@
 All notable changes to GitHub Trend Radar are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-14
+
+### Fixed
+
+- Calibrated interest against a fixed ten-point scale so one weak `detail`
+  event no longer receives the full personalization bonus.
+- Disabled the exploration override for `Top 1` requests.
+- Clarified that the recommended Skills CLI installation is user-level.
+
+### Added
+
+- `forget-repo`, `forget-topic`, and confirmation-protected `reset-profile`
+  feedback controls.
+- Portable profile and feedback export with overwrite protection.
+- Interleaved daily/weekly GitHub metadata enrichment, a 24-hour local cache,
+  transient API retry handling, and enrichment audit counts in snapshots.
+- User-oriented installation, first-run, feedback, privacy, update, and
+  troubleshooting guidance in both READMEs.
+
+### Changed
+
+- GitHub metadata enrichment now covers up to 25 interleaved candidates by
+  default; pass `--enrich-limit 0` to disable it.
+- Added `--programming-language` while retaining `--language` as a compatible
+  alias.
+
 ## [0.4.0] - 2026-09-14
 
 ### Changed
