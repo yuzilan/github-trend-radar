@@ -59,8 +59,12 @@ class FetchTests(unittest.TestCase):
     def test_parser_validates_only_requested_candidates(self) -> None:
         page = article("owner/good") + article("owner/zero", gain=0)
         self.assertEqual(len(fetch_trending.parse_page(page, "daily", 1)), 1)
+        self.assertEqual(fetch_trending.parse_page(page, "daily", 2)[1]["period_stars"], 0)
+        broken_page = article("owner/good") + article("owner/missing", gain=0).replace(
+            "0 stars today", "not available"
+        )
         with self.assertRaises(state.StateError):
-            fetch_trending.parse_page(page, "daily", 2)
+            fetch_trending.parse_page(broken_page, "daily", 2)
 
     def test_enrichment_propagates_to_both_periods(self) -> None:
         periods = {
@@ -128,6 +132,21 @@ class FetchTests(unittest.TestCase):
 
 
 class RankingTests(unittest.TestCase):
+    def test_zero_period_gain_is_valid_and_rankable(self) -> None:
+        item = {
+            "full_name": "owner/quiet",
+            "stars": 1000,
+            "period_stars": 0,
+            "github_position": 1,
+            "description": "A quiet but valid Trending entry",
+            "language": "C#",
+            "topics": [],
+            "in_both_periods": False,
+        }
+        snapshot = {"generated_at": "2026-01-01T00:00:00+00:00", "periods": {"daily": [item]}}
+        result = rank_trending.rank(snapshot, profile.default_profile(), "daily", 1)
+        self.assertEqual(result["objective_top"][0]["period_stars"], 0)
+
     def test_distributed_sample_snapshot_matches_reported_order_and_scores(self) -> None:
         root = Path(__file__).resolve().parents[1]
         snapshot = state.load_json(root / "examples" / "sample-snapshot.json")

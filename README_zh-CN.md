@@ -11,7 +11,7 @@
 
 它不会定时骚扰你，不会自动 star、fork、安装或运行热门仓库，也不会把“你没点开”擅自理解成“不喜欢”。
 
-当前版本：`0.6.0`。源码位于 [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar)，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：`0.6.1`。源码位于 [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar)，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 目录
 
@@ -615,7 +615,7 @@ GitHub 没有正式 Trending API，本项目读取公开 Trending 网页。网�
 ```bash
 python3 -m unittest discover -s tests -v
 ruff check scripts tests
-python3 scripts/release_check.py --strict --tag v0.6.0
+python3 scripts/release_check.py --strict --tag v0.6.1
 ```
 
 自动测试覆盖 HTML 解析失败保护、语言 URL 编码、缓存命中、日榜周榜交错补充、主题别名、权重计算、Top 1 探索位边界、排除、忘记、重置确认、导入导出、历史清除、派生数据清理、只读诊断、并发反馈、备份修复和发布元数据。GitHub Actions 还在 Linux、macOS 和 Windows 上验证 Python 3.11 兼容性，并每周对当前 Trending 页面做一次真实解析冒烟测试。

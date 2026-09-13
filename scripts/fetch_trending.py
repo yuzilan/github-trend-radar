@@ -147,8 +147,8 @@ def validate_items(items: list[dict], period: str) -> None:
             seen.add(name.lower())
         if not isinstance(item.get("stars"), int) or item["stars"] <= 0:
             errors.append(f"row {index}: missing total stars")
-        if not isinstance(item.get("period_stars"), int) or item["period_stars"] <= 0:
-            errors.append(f"row {index}: missing {period} star gain")
+        if not isinstance(item.get("period_stars"), int) or item["period_stars"] < 0:
+            errors.append(f"row {index}: missing or negative {period} star gain")
     if errors:
         preview = "; ".join(errors[:5])
         extra = f"; plus {len(errors) - 5} more" if len(errors) > 5 else ""

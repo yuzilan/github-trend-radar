@@ -48,8 +48,8 @@ def validate_items(items: list[dict], period: str) -> None:
         if full_name in seen:
             raise StateError(f"duplicate repository in {period}: {item['full_name']}")
         seen.add(full_name)
-        if item["stars"] <= 0 or item["period_stars"] <= 0 or item["github_position"] <= 0:
-            raise StateError(f"{period} item {index} has non-positive ranking metrics")
+        if item["stars"] <= 0 or item["period_stars"] < 0 or item["github_position"] <= 0:
+            raise StateError(f"{period} item {index} has invalid ranking metrics")
 
 
 def search_blob(item: dict) -> str:

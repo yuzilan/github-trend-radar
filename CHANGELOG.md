@@ -3,6 +3,15 @@
 All notable changes to GitHub Trend Radar are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-09-14
+
+### Fixed
+
+- Accepted GitHub Trending entries with a legitimate zero period star gain,
+  while continuing to reject missing, negative, or malformed ranking metrics.
+- Prevented valid lower-ranked entries on smaller programming-language lists
+  from causing an otherwise usable Top N request to fail.
+
 ## [0.6.0] - 2026-09-14
 
 ### Added

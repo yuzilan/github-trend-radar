@@ -11,7 +11,7 @@ GitHub Trend Radar is a small, transparent, and auditable Agent Skill. Run it ma
 
 It does not schedule notifications, star or fork repositories, install trending code, or interpret silence as dislike.
 
-Current version: `0.6.0`. Source: [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar). See [CHANGELOG.md](CHANGELOG.md) for release history.
+Current version: `0.6.1`. Source: [yuzilan/github-trend-radar](https://github.com/yuzilan/github-trend-radar). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Contents
 
@@ -605,7 +605,7 @@ This skill currently implements and validates daily and weekly only. It does not
 ```bash
 python3 -m unittest discover -s tests -v
 ruff check scripts tests
-python3 scripts/release_check.py --strict --tag v0.6.0
+python3 scripts/release_check.py --strict --tag v0.6.1
 ```
 
 Tests cover fail-closed HTML parsing, language URL encoding, cache hits, interleaved enrichment, topic aliases, interest scaling, the Top 1 exploration boundary, exclusions, forgetting, reset confirmation, import/export, history purge, derived-data cleanup, read-only diagnostics, concurrent feedback, backup repair, and release metadata. GitHub Actions also verifies Python 3.11 on Linux, macOS, and Windows and runs a weekly live parser smoke test against the current Trending page.
