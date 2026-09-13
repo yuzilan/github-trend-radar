@@ -71,6 +71,8 @@ The directory contains the active profile, append-only feedback, one profile bac
 
 The skill works without `GITHUB_TOKEN`, although unauthenticated API limits are lower. When the variable is present, the token is read only from the process environment and is never written to snapshots, caches, profiles, or logs.
 
+Repository pages and README text are third-party content, so the skill treats them as untrusted evidence rather than agent instructions. Embedded prompts or commands cannot override the skill's rules, request secrets, or trigger tools. Investigating a project does not install or execute it; that is a separate action requiring an explicit request and safety review.
+
 ## Update and remove
 
 ```bash

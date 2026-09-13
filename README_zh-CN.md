@@ -98,6 +98,8 @@ npx skills add yuzilan/github-trend-radar --skill github-trend-radar
 
 默认会给日榜和周榜交错排列的前 25 个候选补充 GitHub topics、许可证和维护信息，并缓存 24 小时。没有 `GITHUB_TOKEN` 也能工作，但公开 API 限额较低；如果本地环境已经设置 Token，脚本只从环境读取，不会把它写进快照、缓存或画像。
 
+仓库页面和 README 都属于第三方内容，因此 Skill 只把它们当作待核实的资料，不会把其中夹带的提示词或命令当成 Agent 指令。远程内容不能覆盖 Skill 规则、索取 Token 或本地资料，也不能自行触发工具。详细了解一个项目不等于安装或运行它；后者必须由用户另行明确提出，并单独进行安全检查。
+
 ## 更新与卸载
 
 更新用户级安装：
